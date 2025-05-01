@@ -18,14 +18,12 @@ CAMINHO_BACKUP_ORIGINAL = "Controle_Financeiro_Maio25.xlsm"
 
 origem_base = CAMINHO_BASE_PADRAO
 
-
 @st.cache_data
 def carregar_dados(file):
     base = pd.read_excel(file, sheet_name="BASE")
     dados = pd.read_excel(file, sheet_name="DADOS")
     calculo = pd.read_excel(file, sheet_name="BASE DE CALCULO")
     return base, dados, calculo
-
 
 base_original, dados, calculo = carregar_dados(origem_base)
 if "base_modificada" not in st.session_state:
@@ -60,52 +58,56 @@ if pagina == "Resumo Geral":
     colf1, colf2, colf3 = st.columns(3)
     colf1.metric("Futura Receita", f"R$ {futuro_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
     colf2.metric("Futura Despesa", f"R$ {futuro_despesa:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    colf3.metric("Saldo Futuro Estimado",
-                 f"R$ {saldo_futuro:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    colf3.metric("Saldo Futuro Estimado", f"R$ {saldo_futuro:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-elif pagina == "Metas e Projeções":
-    import numpy as np
+elif pagina == "Dashboard":
+    import plotly.io as pio
+    from fpdf import FPDF
 
-    st.title("🎯 Metas, Projeções e Indicadores")
+    st.title("📊 Dashboard de Análise")
 
-    st.subheader("📊 Receita vs Despesa Acumuladas")
-    acumulado = base.groupby(["Mês", "Tipo"])["Valor"].sum().reset_index()
-    fig_acumulado = px.line(acumulado, x="Mês", y="Valor", color="Tipo")
-    st.plotly_chart(fig_acumulado, use_container_width=True)
+    st.subheader("Evolução mensal por tipo")
+    graf_evolucao = base.groupby(["Mês", "Tipo"])["Valor"].sum().reset_index()
+    fig_evolucao = px.bar(graf_evolucao, x="Mês", y="Valor", color="Tipo", barmode="group")
+    st.plotly_chart(fig_evolucao, use_container_width=True)
 
-    st.subheader("📌 Distribuição: Fixos vs Variáveis")
-    fixos_variaveis = base[base["Tipo"] == "Despesa"].copy()
-    fixos_variaveis["Grupo"] = fixos_variaveis["Categoria"].apply(lambda x: "Fixos" if x == "Fixos" else "Variáveis")
-    graf_grupo = fixos_variaveis.groupby("Grupo")["Valor"].sum().reset_index()
-    fig_fixos = px.pie(graf_grupo, names="Grupo", values="Valor")
-    st.plotly_chart(fig_fixos, use_container_width=True)
+    st.subheader("Pizza de despesas por categoria")
+    categoria_despesas = base[base["Tipo"] == "Despesa"].groupby("Categoria")["Valor"].sum().reset_index()
+    fig_cat_despesa = px.pie(categoria_despesas, names="Categoria", values="Valor")
+    st.plotly_chart(fig_cat_despesa, use_container_width=True)
 
-    st.subheader("📈 Projeção de Saldo Futuro")
-    df_proj = base.copy()
-    df_proj = df_proj.groupby("Mês")["Valor"].apply(lambda x: x[df_proj.loc[x.index, "Tipo"] == "Receita"].sum() - x[
-        df_proj.loc[x.index, "Tipo"] == "Despesa"].sum()).reset_index(name="Saldo")
-    fig_proj = px.line(df_proj, x="Mês", y="Saldo")
-    st.plotly_chart(fig_proj, use_container_width=True)
-    st.subheader("🔔 Alerta de Gasto por Categoria")
-    alertas = base_mes[base_mes["Tipo"] == "Despesa"].groupby("Categoria")["Valor"].sum().reset_index()
-    for i, row in alertas.iterrows():
-        if row["Valor"] > 1000:
-            st.warning(f"⚠️ Alto gasto em {row['Categoria']}: R$ {row['Valor']:,.2f}".replace(",", "X").replace(".",
-                                                                                                                ",").replace(
-                "X", "."))
+    st.subheader("Pizza de despesas por subcategoria")
+    sub_despesas = base[base["Tipo"] == "Despesa"].groupby("Subcategoria")["Valor"].sum().reset_index()
+    fig_sub_despesas = px.pie(sub_despesas, names="Subcategoria", values="Valor")
+    st.plotly_chart(fig_sub_despesas, use_container_width=True)
 
-    st.subheader("🎯 Progresso de Metas por Categoria")
-    metas = {
-        "Alimentação": 800,
-        "Transporte": 500,
-        "Lazer": 400
-    }
-    gastos_cats = base_mes[base_mes["Tipo"] == "Despesa"].groupby("Categoria")["Valor"].sum().reset_index()
-    for cat, meta in metas.items():
-        valor = gastos_cats[gastos_cats["Categoria"] == cat]["Valor"].sum()
-        percentual = min(int((valor / meta) * 100), 100)
-        st.write(f"{cat}: R$ {valor:,.2f} / R$ {meta:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        st.progress(percentual)
+    st.subheader("Pizza de receitas por categoria")
+    categoria_receitas = base[base["Tipo"] == "Receita"].groupby("Categoria")["Valor"].sum().reset_index()
+    if not categoria_receitas.empty:
+        fig_cat_receita = px.pie(categoria_receitas, names="Categoria", values="Valor")
+        st.plotly_chart(fig_cat_receita, use_container_width=True)
+
+    st.subheader("Média mensal por tipo")
+    media_mensal = base.groupby(["Mês", "Tipo"])["Valor"].sum().groupby("Tipo").mean().reset_index()
+    fig_media = px.bar(media_mensal, x="Tipo", y="Valor")
+    st.plotly_chart(fig_media, use_container_width=True)
+
+    st.subheader("Gráfico de barras empilhadas por mês e categoria")
+    barras_emp = base[base["Tipo"] == "Despesa"].groupby(["Mês", "Categoria"])["Valor"].sum().reset_index()
+    fig_barras = px.bar(barras_emp, x="Mês", y="Valor", color="Categoria", title="Despesas por mês e categoria", barmode="stack")
+    st.plotly_chart(fig_barras, use_container_width=True)
+
+    st.subheader("Ranking dos maiores gastos")
+    top_gastos = base[base["Tipo"] == "Despesa"].sort_values(by="Valor", ascending=False).head(5)
+    st.dataframe(top_gastos.reset_index(drop=True), use_container_width=True)
+
+    st.subheader("Resumo por categoria")
+    resumo_cat = base[base["Tipo"] == "Despesa"].groupby("Categoria").agg(
+        Total=("Valor", "sum"),
+        Quantidade=("Valor", "count")
+    ).reset_index()
+    resumo_cat["% do Total"] = (resumo_cat["Total"] / resumo_cat["Total"].sum()) * 100
+    st.dataframe(resumo_cat, use_container_width=True)
 
 elif pagina == "Dashboard":
     import plotly.io as pio
